@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>AI ERP</title>
+<style>
+body{font-family:sans-serif;margin:0;display:grid;grid-template-columns:1fr 1fr;height:100vh}
+.panel{padding:16px;overflow:auto;border-right:1px solid #ddd}
+h3{margin:8px 0}
+.tabs button{margin-right:4px;padding:6px 12px;cursor:pointer}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border-bottom:1px solid #eee;padding:6px;text-align:left}
+#chat{display:flex;flex-direction:column;height:100%}
+#messages{flex:1;overflow:auto;border:1px solid #ddd;border-radius:6px;padding:10px;background:#fafafa}
+.msg{margin:6px 0;padding:8px;border-radius:6px;max-width:85%;white-space:pre-wrap}
+.user{background:#d1e7ff;margin-left:auto}
+.assistant{background:#fff;border:1px solid #e0e0e0}
+.tool{font-size:11px;color:#666;font-style:italic}
+#chat form{display:flex;gap:6px;margin-top:8px}
+#chat input{flex:1;padding:10px}
+.tool-tag{display:inline-block;font-size:11px;background:#eee;padding:1px 6px;border-radius:4px;margin:2px 2px 0 0}
+</style></head><body>
+
+<div class="panel">
+  <h3>Справочники</h3>
+  <div class="tabs">
+    <button onclick="showTab('products')">Товары</button>
+    <button onclick="showTab('partners')">Контрагенты</button>
+    <button onclick="showTab('warehouses')">Склады</button>
+    <button onclick="logout()" style="float:right;background:#eee">Выйти</button>
+  </div>
+  <div id="tabContent">Загрузка...</div>
+</div>
+
+<div class="panel" style="border-right:none;display:flex;flex-direction:column">
+  <h3>ИИ-ассистент</h3>
+  <div id="chat">
+    <div id="messages"></div>
+    <form onsubmit="sendMsg(event)">
+      <input id="msgInput" placeholder="Например: сколько осталось гвоздей?" autocomplete="off">
+      <button>→</button>
+    </form>
+  </div>
+</div>
+
+<script>
+const token = localStorage.getItem('token');
+if(!token) location.href = '/login';
+const H = { 'Authorization': 'Bearer ' + token };
+
+async function api(path, opts={}) {
+  opts.headers = Object.assign({}, H, opts.headers || {});
+  const r = await fetch(path, opts);
+  if (r.status === 401) { localStorage.clear(); location.href='/login'; }
+  return r.json();
+}
+
+const TABS = {
+  products: {url:'/api/products', cols:['id','name','sku','stock','unit','warehouse_id']},
+  partners: {url:'/api/partners', cols:['id','name','inn','type','address']},
+  warehouses: {url:'/api/warehouses', cols:['id','name','address']},
+};
+
+async function showTab(name) {
+  const cfg = TABS[name];
+  const data = await api(cfg.url);
+  const rows = data.map(r => `<tr>${cfg.cols.map(c => `<td>${r[c] ?? ''}</td>`).join('')}</tr>`).join('');
+  document.getElementById('tabContent').innerHTML =
+    `<table><thead><tr>${cfg.cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+showTab('products');
+
+function addMsg(cls, text, tools) {
+  const box = document.getElementById('messages');
+  const d = document.createElement('div');
+  d.className = 'msg ' + cls;
+  let html = text;
+  if (tools && tools.length) {
+    html += '<div>' + tools.map(t => `<span class="tool-tag">${t.tool}</span>`).join('') + '</div>';
+  }
+  d.innerHTML = html;
+  box.appendChild(d);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function sendMsg(e) {
+  e.preventDefault();
+  const input = document.getElementById('msgInput');
+  const text = input.value.trim(); if (!text) return;
+  input.value = '';
+  addMsg('user', text);
+  addMsg('assistant', '…думаю');
+  const box = document.getElementById('messages');
+  const thinking = box.lastChild;
+  try {
+    const r = await api('/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({message: text}),
+    });
+    thinking.remove();
+    addMsg('assistant', r.reply, r.actions);
+  } catch(err) {
+    thinking.remove();
+    addMsg('assistant', 'Ошибка: ' + err);
+  }
+}
+
+function logout(){ localStorage.clear(); location.href='/login'; }
+</script>
+</body></html>

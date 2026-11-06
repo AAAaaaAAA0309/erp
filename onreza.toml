@@ -1,0 +1,5 @@
+[deploy]
+compute = "process"
+runtime = "python"
+server = "uvicorn"
+application = "app.main:app"
